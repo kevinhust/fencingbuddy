@@ -1,0 +1,44 @@
+# =============================================================================
+# FencerAI Requirements - Edge-First Fencing Analysis System
+# Version: 1.0 | Last Updated: 2026-03-27
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# OPTION A: Lightweight (RECOMMENDED for Edge/Real-time)
+# Uses rtmlib - ONNX-based RTMPose without mmcv/mmcv-full dependencies
+# Best for: iPhone-level hardware, <150ms latency target
+# -----------------------------------------------------------------------------
+rtmlib>=0.3.0
+norfair>=2.2.0
+
+# -----------------------------------------------------------------------------
+# OPTION B: Full Stack (Alternative)
+# Uses official MMPose with full model zoo support
+# Best for: Research, offline batch processing, model exploration
+# -----------------------------------------------------------------------------
+# mmpose>=1.0.0
+# mmcv>=2.0.0
+# mmengine>=0.8.0
+
+# -----------------------------------------------------------------------------
+# Core Dependencies
+# -----------------------------------------------------------------------------
+numpy>=1.24.0
+opencv-python>=4.8.0
+scipy>=1.11.0
+pydantic>=2.0.0
+torch>=2.0.0                    # CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu
+# torchvision>=0.15.0          # Only needed for image transforms
+
+# -----------------------------------------------------------------------------
+# Audio Processing
+# -----------------------------------------------------------------------------
+librosa>=0.10.0
+soundfile>=0.12.0               # Audio file I/O
+
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+tqdm>=4.65.0                    # Progress bars
+omegaconf>=2.3.0                # Config management (Hydra-style)
+loguru>=0.7.0                   # Modern logging
