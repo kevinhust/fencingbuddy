@@ -271,7 +271,7 @@ Video/Audio → TimestampedBuffer → RTMPose → Norfair Dual Tracker → Calib
 | Task | Status | Description |
 |------|--------|-------------|
 | 4.3.1 | ✅ | Comprehensive error handling with try/except |
-| 4.3.2 | [ ] | Pipeline health monitoring |
+| 4.3.2 | ✅ | Pipeline health monitoring (HealthMonitor class) |
 
 ### 4.4 CLI Interface (P0)
 | Task | Status | Description |
@@ -304,7 +304,7 @@ Video/Audio → TimestampedBuffer → RTMPose → Norfair Dual Tracker → Calib
 ### 5.3 E2E Tests with Sample Data (P1)
 | Task | Status | Description |
 |------|--------|-------------|
-| 5.3.1 | [ ] | `tests/test_e2e_clean_bout.py` (requires sample video) |
+| 5.3.1 | ✅ | `tests/test_e2e_clean_bout.py` - 6 tests passing |
 | 5.3.2 | [ ] | `tests/test_e2e_infighting.py` (requires sample video) |
 | 5.3.3 | [ ] | `tests/test_e2e_club_noise.py` (requires sample video) |
 
@@ -343,41 +343,36 @@ Video/Audio → TimestampedBuffer → RTMPose → Norfair Dual Tracker → Calib
 | Task | Status | Description |
 |------|--------|-------------|
 | 7.1.1 | ✅ | `--visualize` flag for skeleton overlay (implemented in Phase 4) |
-| 7.1.2 | [ ] | Feature matrix heatmap export |
+| 7.1.2 | ✅ | Feature matrix heatmap export (`--heatmap` flag) |
 
 ---
 
 ## Progress Summary
 
-### Overall: Phase 4 Mostly Complete ✅
+### Overall: Phase 7 Complete ✅
 
 | Phase | Tasks | Completed | In Progress | Pending |
 |-------|-------|----------|------------|---------|
 | Phase 1 | 11 | 11 | 0 | 0 |
 | Phase 2 | 14 | 14 | 0 | 0 |
 | Phase 3 | 18 | 18 | 0 | 0 |
-| Phase 4 | 9 | 8 | 0 | 1 |
-| Phase 5 | 10 | 7 | 0 | 3 (E2E + Performance) |
+| Phase 4 | 9 | 9 | 0 | 0 |
+| Phase 5 | 10 | 8 | 0 | 2 (E2E + Performance) |
 | Phase 6 | 5 | 5 | 0 | 0 |
-| Phase 7 | 2 | 1 | 0 | 1 |
-| **Total** | **69** | **64** | **0** | **7** |
+| Phase 7 | 2 | 2 | 0 | 0 |
+| **Total** | **69** | **67** | **0** | **2** |
 
 ### Completed Tasks
 - ✅ Phase 1: Config, Logging, Pydantic Schemas, Buffer, Constants, Types
 - ✅ Phase 2: RTMPose, Tracker, Calibrator, Audio Detection, Pipeline Integration
 - ✅ Phase 3: Feature Math Engine, All 101 Feature Dimensions, Canonicalization, FeatureExtractor
-- ✅ Phase 4: Main Pipeline (CLI, video processing, output persistence, --visualize)
+- ✅ Phase 4: Main Pipeline (CLI, video processing, output persistence, --visualize, HealthMonitor)
 - ✅ Phase 5: Unit tests (288 total tests passing), Integration tests
 - ✅ Phase 6: Performance profiling, RTMPose mode comparison (lightweight 8x faster), PipelineMonitor
-- ✅ Phase 7: Skeleton overlay visualization (--visualize flag)
+- ✅ Phase 7: Skeleton overlay visualization, Feature matrix heatmap export
 
 ### Current Focus
-- Phase 4 remaining: Pipeline health monitoring
-- Phase 5: E2E tests (require sample video data)
-- Phase 7 remaining: Feature matrix heatmap export
-- Phase 5 remaining: E2E tests (require sample video data)
-- Phase 6 complete: Lightweight mode is default (158ms/frame), profiling utilities ready
-- Phase 7 future: Visualization tools for skeleton overlay and feature heatmaps
+- Phase 5: E2E tests remaining (infighting, club_noise - require additional sample videos)
 
 ---
 
@@ -398,3 +393,7 @@ Video/Audio → TimestampedBuffer → RTMPose → Norfair Dual Tracker → Calib
 | 2026-03-27 | 6 | All | Completed Performance Profiling Utilities (src/utils/profiling.py, PipelineMonitor)
 | 2026-03-27 | 6 | 6.1.2 | Phase 6 Complete: RTMPose lightweight mode 8x faster (158ms vs 1214ms), set as default |
 | 2026-03-28 | 4 | 4.2.2 | Implemented `--visualize` flag: skeleton overlay, bbox, fencer ID, info bar |
+| 2026-03-28 | 7 | 7.1.2 | Implemented `--heatmap` flag: feature matrix heatmap export (per-fencer + combined) |
+| 2026-03-28 | 4 | 4.3.2 | Implemented HealthMonitor: detection quality, confidence, processing time tracking |
+| 2026-03-28 | 5 | 5.3.1 | Created E2E test suite: test_e2e_clean_bout.py (6 tests passing) |
+| 2026-03-28 | 5 | 5.x | Fixed canonicalization: clip flipped keypoints to [0, frame_width] |

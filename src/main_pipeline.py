@@ -24,8 +24,8 @@ from tqdm import tqdm
 
 from src.utils.logging import logger
 from src.utils.schemas import FeatureMatrix, FrameData
-from src.utils.profiling import PipelineMonitor, get_system_info
-from src.utils.visualization import draw_frame_overlay, draw_info_overlay
+from src.utils.profiling import PipelineMonitor, get_system_info, HealthMonitor
+from src.utils.visualization import draw_frame_overlay, draw_info_overlay, export_feature_heatmap
 from src.perception.pipeline import PerceptionPipeline
 from src.recognition.feature_extractor import FeatureExtractor
 
@@ -78,6 +78,11 @@ def parse_args() -> argparse.Namespace:
         "--visualize",
         action="store_true",
         help="Enable visualization output (P1)",
+    )
+    parser.add_argument(
+        "--heatmap",
+        action="store_true",
+        help="Export feature matrix heatmap (P1)",
     )
     parser.add_argument(
         "--profile",
@@ -153,6 +158,7 @@ def process_video(
     enable_visualization: bool = False,
     calibration_file: Optional[str] = None,
     enable_profiling: bool = False,
+    enable_heatmap: bool = False,
 ) -> FeatureMatrix:
     """
     Process video through perception and recognition pipelines.
@@ -176,6 +182,13 @@ def process_video(
     if enable_profiling:
         monitor.start()
         logger.info("Performance profiling enabled")
+
+    # Initialize health monitor
+    health_monitor = HealthMonitor(
+        min_detections=2,
+        min_confidence=0.3,
+        max_processing_time_ms=500.0,
+    )
 
     # Load calibration if provided
     calibration_data = load_calibration(calibration_file)
@@ -244,6 +257,9 @@ def process_video(
 
             timestamp = frame_id / fps if fps > 0 else 0.0
 
+            # Start health monitoring for this frame
+            health_monitor.start_frame(frame_id, timestamp)
+
             if monitor is not None:
                 with monitor.stage("perception"):
                     frame_data = perception_pipeline.process_frame(
@@ -270,6 +286,16 @@ def process_video(
                     frame=frame_data,
                     frame_width=frame_width,
                 )
+
+            # Record health metrics
+            confidences = [kp.conf for pose in frame_data.poses for kp in pose.keypoints]
+            health_issues = health_monitor.end_frame(
+                n_detections=len(frame_data.poses),
+                confidences=confidences,
+            )
+            if health_issues:
+                for issue in health_issues:
+                    logger.debug(f"Frame {frame_id} health issue: {issue}")
 
             all_features.append(features)
             all_timestamps.append(timestamp)
@@ -317,6 +343,9 @@ def process_video(
         else:
             logger.warning("✗ Exceeds 500ms latency target")
 
+    # Print health summary
+    logger.info("\n" + health_monitor.summary())
+
     # Build feature matrix
     feature_matrix = FeatureMatrix(
         features=np.array(all_features, dtype=np.float32),
@@ -336,6 +365,12 @@ def process_video(
         "skip_frames": skip_frames,
     }
     save_features(output_path, feature_matrix, metadata)
+
+    # Export heatmap if requested
+    if enable_heatmap:
+        logger.info("Exporting feature heatmap...")
+        export_feature_heatmap(feature_matrix.features, output_path)
+        logger.info(f"Heatmap exported to {output_path}_*.png")
 
     return feature_matrix
 
@@ -363,6 +398,7 @@ def main() -> None:
             enable_visualization=args.visualize,
             calibration_file=args.calibration_file,
             enable_profiling=args.profile,
+            enable_heatmap=args.heatmap,
         )
 
         logger.info("=" * 60)

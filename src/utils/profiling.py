@@ -439,3 +439,236 @@ def format_latency_table(results: Dict[str, List[float]]) -> str:
         )
 
     return "\n".join(lines)
+
+
+# =============================================================================
+# Pipeline Health Monitor
+# =============================================================================
+
+@dataclass
+class HealthMetrics:
+    """Health metrics for a single frame."""
+    frame_id: int
+    timestamp: float
+    n_detections: int
+    n_tracked: int
+    mean_confidence: float
+    min_confidence: float
+    processing_time_ms: float
+    is_healthy: bool
+    issues: List[str]
+
+
+class HealthMonitor:
+    """
+    Monitor pipeline health metrics.
+
+    Tracks:
+    - Detection consistency (are both fencers detected?)
+    - Confidence scores (are they healthy?)
+    - Processing time (are we keeping up with real-time?)
+    - Error rates
+
+    Example:
+        monitor = HealthMonitor()
+
+        for frame in video:
+            monitor.start_frame(frame_id, timestamp)
+            # ... process frame ...
+            issues = monitor.end_frame(
+                n_detections=2,
+                confidences=[0.9, 0.8],
+                processing_time_ms=120.0
+            )
+            if issues:
+                logger.warning(f"Health issues: {issues}")
+
+        print(monitor.summary())
+    """
+
+    def __init__(
+        self,
+        min_detections: int = 2,
+        min_confidence: float = 0.3,
+        max_processing_time_ms: float = 500.0,
+    ):
+        """
+        Initialize health monitor.
+
+        Args:
+            min_detections: Minimum expected detections per frame
+            min_confidence: Minimum acceptable confidence score
+            max_processing_time_ms: Maximum acceptable processing time per frame
+        """
+        self.min_detections = min_detections
+        self.min_confidence = min_confidence
+        self.max_processing_time_ms = max_processing_time_ms
+
+        self._metrics: List[HealthMetrics] = []
+        self._frame_start_times: Dict[int, float] = {}
+        self._current_frame_id: Optional[int] = None
+
+    def start_frame(self, frame_id: int, timestamp: float) -> None:
+        """Mark the start of a frame processing."""
+        self._current_frame_id = frame_id
+        self._frame_start_times[frame_id] = time.perf_counter()
+
+    def end_frame(
+        self,
+        n_detections: int,
+        confidences: List[float],
+        processing_time_ms: Optional[float] = None,
+    ) -> List[str]:
+        """
+        Mark the end of frame processing and record health metrics.
+
+        Args:
+            n_detections: Number of fencers detected
+            confidences: List of confidence scores for each detection
+            processing_time_ms: Actual processing time (if None, calculated)
+
+        Returns:
+            List of health issues detected
+        """
+        if self._current_frame_id is None:
+            return ["No frame started"]
+
+        frame_id = self._current_frame_id
+        timestamp = self._frame_start_times.get(frame_id, 0.0)
+
+        if processing_time_ms is None:
+            processing_time_ms = (time.perf_counter() - timestamp) * 1000
+
+        issues: List[str] = []
+
+        # Check detection count
+        if n_detections < self.min_detections:
+            issues.append(f"Low detections: {n_detections}/{self.min_detections}")
+
+        # Check confidence scores
+        if confidences:
+            mean_conf = np.mean(confidences)
+            min_conf = np.min(confidences)
+
+            if mean_conf < self.min_confidence:
+                issues.append(f"Low mean confidence: {mean_conf:.2f}")
+
+            if min_conf < self.min_confidence:
+                issues.append(f"Low min confidence: {min_conf:.2f}")
+        elif n_detections > 0:
+            issues.append("No confidence scores provided")
+
+        # Check processing time
+        if processing_time_ms > self.max_processing_time_ms:
+            issues.append(f"Slow processing: {processing_time_ms:.0f}ms")
+
+        # Determine overall health
+        is_healthy = len(issues) == 0
+
+        # Record metrics
+        metrics = HealthMetrics(
+            frame_id=frame_id,
+            timestamp=timestamp,
+            n_detections=n_detections,
+            n_tracked=min(n_detections, 2),  # Assume tracked = detected for now
+            mean_confidence=np.mean(confidences) if confidences else 0.0,
+            min_confidence=np.min(confidences) if confidences else 0.0,
+            processing_time_ms=processing_time_ms,
+            is_healthy=is_healthy,
+            issues=issues,
+        )
+        self._metrics.append(metrics)
+
+        self._current_frame_id = None
+        return issues
+
+    def record_skip(self, frame_id: int, reason: str = "skip") -> None:
+        """Record a skipped frame."""
+        metrics = HealthMetrics(
+            frame_id=frame_id,
+            timestamp=0.0,
+            n_detections=0,
+            n_tracked=0,
+            mean_confidence=0.0,
+            min_confidence=0.0,
+            processing_time_ms=0.0,
+            is_healthy=False,
+            issues=[f"Frame skipped: {reason}"],
+        )
+        self._metrics.append(metrics)
+
+    def summary(self) -> str:
+        """Get health summary report."""
+        if not self._metrics:
+            return "Health Monitor: No metrics recorded"
+
+        total_frames = len(self._metrics)
+        healthy_frames = sum(1 for m in self._metrics if m.is_healthy)
+        unhealthy_frames = total_frames - healthy_frames
+
+        issues_count: Dict[str, int] = defaultdict(int)
+        for m in self._metrics:
+            for issue in m.issues:
+                # Normalize issue string for counting
+                normalized = issue.split(":")[0]  # Take first part before colon
+                issues_count[normalized] += 1
+
+        # Detection stats
+        detection_rates = [m.n_detections for m in self._metrics]
+        avg_detections = np.mean(detection_rates)
+
+        # Confidence stats
+        confidences = [m.mean_confidence for m in self._metrics if m.mean_confidence > 0]
+        avg_confidence = np.mean(confidences) if confidences else 0.0
+
+        # Processing time stats
+        processing_times = [m.processing_time_ms for m in self._metrics if m.processing_time_ms > 0]
+        avg_processing = np.mean(processing_times) if processing_times else 0.0
+
+        lines = [
+            "=" * 60,
+            "PIPELINE HEALTH SUMMARY",
+            "=" * 60,
+            f"Total Frames:    {total_frames}",
+            f"Healthy Frames:  {healthy_frames} ({healthy_frames/total_frames*100:.1f}%)",
+            f"Unhealthy:       {unhealthy_frames} ({unhealthy_frames/total_frames*100:.1f}%)",
+            "",
+            "Detection Quality:",
+            f"  Avg Detections/Frame: {avg_detections:.1f}",
+            f"  Avg Confidence:      {avg_confidence:.2f}",
+            "",
+            "Processing Performance:",
+            f"  Avg Processing Time:  {avg_processing:.1f}ms",
+            f"  Real-time Capable:  {'Yes' if avg_processing < 33.33 else 'No'} (33.33ms = 30fps)",
+            "",
+            "Top Issues:",
+        ]
+
+        if issues_count:
+            for issue, count in sorted(issues_count.items(), key=lambda x: -x[1])[:5]:
+                lines.append(f"  {issue}: {count}")
+        else:
+            lines.append("  None")
+
+        lines.append("=" * 60)
+
+        return "\n".join(lines)
+
+    def is_healthy(self) -> bool:
+        """Check if pipeline is currently healthy."""
+        if not self._metrics:
+            return True
+        # Consider healthy if 90%+ frames are healthy
+        recent = self._metrics[-100:]  # Last 100 frames
+        healthy_count = sum(1 for m in recent if m.is_healthy)
+        return healthy_count / len(recent) >= 0.9 if recent else True
+
+    def get_metrics(self) -> List[HealthMetrics]:
+        """Get all recorded metrics."""
+        return self._metrics.copy()
+
+    def reset(self) -> None:
+        """Reset all metrics."""
+        self._metrics.clear()
+        self._frame_start_times.clear()
+        self._current_frame_id = None

@@ -124,14 +124,19 @@ def canonicalize_frame(frame: FrameData, frame_width: float = 1920.0) -> FrameDa
             # Flip horizontally
             flipped_keypoints = []
             for kp in pose.keypoints:
+                # Flip x coordinate (clip to [0, frame_width] since RTMPose can return values outside bounds)
+                flipped_x = max(0.0, min(frame_width, frame_width - kp.x))
                 flipped_keypoints.append(type(kp)(
-                    x=frame_width - kp.x,
+                    x=flipped_x,
                     y=kp.y,
                     conf=kp.conf,
                 ))
 
             x1, y1, x2, y2 = pose.bbox
-            new_bbox = (frame_width - x2, y1, frame_width - x1, y2)
+            # Flip bbox and clip to valid range
+            new_x1 = max(0.0, min(frame_width, frame_width - x2))
+            new_x2 = max(0.0, min(frame_width, frame_width - x1))
+            new_bbox = (new_x1, y1, new_x2, y2)
 
             canonicalized_poses.append(FencerPose(
                 fencer_id=pose.fencer_id,
