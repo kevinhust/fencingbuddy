@@ -150,5 +150,5 @@ MAX_REPROJECTION_ERROR = 10.0  # meters - max error for valid calibration
 
 MAX_DETECTION_DISTANCE = 30.0  # pixels
 MAX_TRACKER_AGE = 30  # frames
-MIN_HIT_HITS = 3  # minimum detections before tracking
+MIN_HIT_HITS = 1  # minimum detections before tracking (1 = immediate)
 REFREE_FILTER_Y_THRESHOLD = 0.3  # Y < 0.3 * frame_height = referee

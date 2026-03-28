@@ -289,7 +289,8 @@ class FencerTracker:
             List[FencerPose] with assigned fencer_ids (0=Left, 1=Right)
         """
         # Filter detections by referee rule (bottom 70%)
-        y_threshold_px = frame_height * (1.0 - self.ref_y_threshold)
+        # Keep detections in lower 70% (Y >= ref_y_threshold * frame_height)
+        y_threshold_px = frame_height * self.ref_y_threshold
         filtered_dets = self._filter_referees(detections, y_threshold_px)
 
         # Select top 2 by bbox area

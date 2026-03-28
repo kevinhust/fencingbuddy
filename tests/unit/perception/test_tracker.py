@@ -134,7 +134,7 @@ class TestFencerTrackerInit:
         tracker = FencerTracker()
         assert tracker.distance_threshold == 30.0
         assert tracker.max_age == 30
-        assert tracker.min_hits == 3
+        assert tracker.min_hits == 1
         assert tracker.ref_y_threshold == 0.3
 
     def test_init_with_custom_params(self):

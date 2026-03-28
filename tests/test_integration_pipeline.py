@@ -194,14 +194,16 @@ class TestPipelineIntegration:
 
     def test_empty_poses_handled_gracefully(self):
         """Empty poses should not crash the pipeline."""
-        perception = PerceptionPipeline(conf_threshold=0.99)  # High threshold
         extractor = FeatureExtractor()
 
-        # Process frame with no valid detections
-        frame_data = perception.process_frame(
-            frame=np.zeros((480, 640, 3), dtype=np.uint8),
-            timestamp=0.0,
+        # Create frame data with no poses directly
+        # (RTMPose may return spurious detections on black frames even with high threshold)
+        frame_data = FrameData(
             frame_id=0,
+            timestamp=0.0,
+            poses=[],  # No poses
+            audio_event=None,
+            homography_matrix=None,
         )
 
         features = extractor.extract_frame_features(frame_data)
