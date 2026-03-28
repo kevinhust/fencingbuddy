@@ -74,7 +74,7 @@ class RTMPoseEstimator:
 
     def __init__(
         self,
-        mode: str = "balanced",
+        mode: str = "lightweight",
         device: str = "cpu",
         conf_threshold: float = 0.3,
     ) -> None:

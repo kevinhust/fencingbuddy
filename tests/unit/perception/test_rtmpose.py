@@ -19,7 +19,7 @@ class TestRTMPoseEstimatorInit:
     def test_init_with_defaults(self):
         """Should initialize with default parameters."""
         estimator = RTMPoseEstimator()
-        assert estimator.mode == "balanced"
+        assert estimator.mode == "lightweight"
         assert estimator.device == "cpu"
         assert estimator.conf_threshold == 0.3
 

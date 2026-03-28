@@ -204,11 +204,12 @@ class TestFrameData:
         frame = FrameData(frame_id=1, timestamp=0.033, poses=[pose0, pose1])
         assert len(frame.poses) == 2
 
-    def test_frame_data_no_poses_fails(self):
-        """Frame with 0 poses should fail (min_length=1)."""
+    def test_frame_data_no_poses_valid(self):
+        """Frame with 0 poses is now valid (allows empty for no detections)."""
         from src.utils.schemas import FrameData
-        with pytest.raises(ValueError):
-            FrameData(frame_id=1, timestamp=0.033, poses=[])
+        # Empty poses are now allowed
+        frame = FrameData(frame_id=1, timestamp=0.033, poses=[])
+        assert len(frame.poses) == 0
 
     def test_frame_data_three_poses_fails(self):
         """Frame with 3 poses should fail (max_length=2)."""
@@ -404,13 +405,14 @@ class TestSerialization:
 class TestFactoryFunctions:
     """Test convenience factory functions."""
 
-    def test_create_empty_frame_raises_validation_error(self):
-        """create_empty_frame currently raises due to poses=[] being invalid."""
+    def test_create_empty_frame_succeeds(self):
+        """create_empty_frame now works since poses=[] is valid."""
         from src.utils.schemas import create_empty_frame
-        # Factory creates poses=[] but FrameData requires min 1 pose
-        # This is a known issue - the factory produces invalid data
-        with pytest.raises(ValueError):
-            create_empty_frame(frame_id=5, timestamp=0.5)
+        # Empty poses are now valid
+        frame = create_empty_frame(frame_id=5, timestamp=0.5)
+        assert frame.frame_id == 5
+        assert frame.timestamp == 0.5
+        assert len(frame.poses) == 0
 
     def test_create_touch_audio_event(self):
         """create_touch_audio_event should create blade_touch event."""
