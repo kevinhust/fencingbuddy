@@ -136,23 +136,23 @@ class AudioEvent(BaseModel):
 class FrameData(BaseModel):
     """
     All data for a single video frame.
-    
+
     Attributes:
         frame_id: Sequential frame index
         timestamp: Time in seconds
-        poses: List of 1-2 FencerPose objects
+        poses: List of 0-2 FencerPose objects (empty if no detections)
         audio_event: Optional audio event detected in this frame
         homography_matrix: Optional 3x3 matrix for pixel-to-meter transformation
     """
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    
+
     frame_id: int = Field(..., ge=0, description="Sequential frame index")
     timestamp: float = Field(..., ge=0.0, description="Time in seconds from video start")
     poses: List[FencerPose] = Field(
-        ..., 
-        min_length=1, 
+        default_factory=list,
+        min_length=0,
         max_length=2,
-        description="1-2 fencer poses per frame"
+        description="0-2 fencer poses per frame (empty if no detections)"
     )
     audio_event: Optional[AudioEvent] = Field(
         default=None,

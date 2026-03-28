@@ -8,7 +8,7 @@
 # Uses rtmlib - ONNX-based RTMPose without mmcv/mmcv-full dependencies
 # Best for: iPhone-level hardware, <150ms latency target
 # -----------------------------------------------------------------------------
-rtmlib>=0.3.0
+rtmlib>=0.0.15
 norfair>=2.2.0
 
 # -----------------------------------------------------------------------------
