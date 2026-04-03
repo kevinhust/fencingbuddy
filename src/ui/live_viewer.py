@@ -13,6 +13,7 @@ Features:
 - Score tracking (manual)
 - Session recording indicator
 - Alert history
+- "3 Things to Fix" summary panel
 
 Example:
     viewer = LiveViewer()
@@ -22,8 +23,9 @@ Example:
 from __future__ import annotations
 
 import time
+from collections import Counter
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import cv2
 import numpy as np
@@ -111,6 +113,11 @@ class LiveViewer:
         self._current_poses: List[FencerPose] = []
         self._is_closed = False
 
+        # "3 Things to Fix" tracking - alert frequency
+        self._alert_counter: Counter = Counter()
+        self._things_to_fix_max: int = 3
+        self._things_to_fix_min_count: int = 2  # Minimum occurrences to show
+
     def show(
         self,
         frame: np.ndarray,
@@ -154,9 +161,15 @@ class LiveViewer:
                     priority=alert.priority,
                     fencer_id=alert.fencer_id,
                 )
+                # Track alert for "3 Things to Fix" (only son's alerts)
+                if alert.fencer_id == 0 or alert.fencer_id is None:
+                    self._alert_counter[alert.message] += 1
         self._alert_renderer.update()
         if self.config.show_alerts:
             display = self._alert_renderer.draw(display)
+
+        # Draw "3 Things to Fix" summary
+        display = self._draw_things_to_fix(display)
 
         # Draw score
         if self.config.show_score:
@@ -266,6 +279,81 @@ class LiveViewer:
 
         return frame
 
+    def _draw_things_to_fix(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Draw "3 Things to Fix" panel based on frequent alerts.
+
+        Args:
+            frame: Video frame
+
+        Returns:
+            Frame with things-to-fix panel
+        """
+        h, w = frame.shape[:2]
+
+        # Get top alerts by frequency (only son's alerts count)
+        frequent_alerts = [
+            (msg, count) for msg, count in self._alert_counter.most_common(10)
+            if count >= self._things_to_fix_min_count
+        ][:self._things_to_fix_max]
+
+        if not frequent_alerts:
+            return frame
+
+        # Panel dimensions (bottom left area)
+        panel_w = 300
+        panel_h = 80 + len(frequent_alerts) * 25
+        x = 10
+        y = h - panel_h - 10
+
+        # Draw background
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (x, y), (x + panel_w, y + panel_h), (0, 0, 0), -1)
+        cv2.addWeighted(
+            overlay[y:y + panel_h, x:x + panel_w],
+            0.7,
+            frame[y:y + panel_h, x:x + panel_w],
+            0.3,
+            0,
+            frame[y:y + panel_h, x:x + panel_w],
+        )
+
+        # Draw border
+        cv2.rectangle(frame, (x, y), (x + panel_w, y + panel_h), (100, 100, 100), 1)
+
+        # Draw title
+        cv2.putText(
+            frame,
+            "3 THINGS TO FIX",
+            (x + 10, y + 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+        )
+
+        # Draw frequent alerts
+        for i, (msg, count) in enumerate(frequent_alerts):
+            y_pos = y + 40 + i * 22
+            # Truncate message if too long
+            if len(msg) > 30:
+                display_msg = msg[:27] + "..."
+            else:
+                display_msg = msg
+
+            text = f"({count}x) {display_msg}"
+            cv2.putText(
+                frame,
+                text,
+                (x + 10, y_pos),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 200, 100),  # Orange-ish for visibility
+                1,
+            )
+
+        return frame
+
     def _handle_keypress(self, key: int) -> None:
         """Handle keypresses."""
         if key == ord('r'):  # Toggle recording
@@ -340,6 +428,13 @@ class LiveViewer:
     def is_closed(self) -> bool:
         """Check if viewer window was closed."""
         return self._is_closed
+
+    def reset_session(self) -> None:
+        """Reset session data for a new bout."""
+        self._son_score = 0
+        self._opp_score = 0
+        self._alert_counter.clear()
+        self._alert_renderer.clear()
 
     def close(self) -> None:
         """Close the viewer window."""

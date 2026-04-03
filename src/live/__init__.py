@@ -11,5 +11,6 @@ from __future__ import annotations
 
 from src.live.live_capture import LiveCapture, CameraConfig
 from src.live.frame_buffer import FrameBuffer
+from src.live.session_recorder import SessionRecorder, SessionMetadata, AlertRecord
 
-__all__ = ["LiveCapture", "CameraConfig", "FrameBuffer"]
+__all__ = ["LiveCapture", "CameraConfig", "FrameBuffer", "SessionRecorder", "SessionMetadata", "AlertRecord"]
