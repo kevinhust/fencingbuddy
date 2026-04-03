@@ -1,13 +1,24 @@
 """
 FencerAI Main Pipeline
 =====================
-Version: 1.0 | Last Updated: 2026-03-27
+Version: 2.0 | Last Updated: 2026-04-02
 
 End-to-end pipeline for fencing video feature extraction.
 Processes video frames through Perception → Recognition layers to produce (N, 2, 101) feature matrix.
+Supports both file-based processing and live streaming.
 
 Usage:
+    # File processing
     python -m src.main_pipeline --video data/samples/sample.mp4 --output outputs/features
+
+    # Live streaming (Continuity Camera)
+    python -m src.main_pipeline --live --camera 0
+
+    # Live streaming with specific camera
+    python -m src.main_pipeline --live --camera 1
+
+    # Live streaming from RTSP URL
+    python -m src.main_pipeline --live --url rtsp://camera-ip:554/stream
 """
 
 from __future__ import annotations
@@ -29,6 +40,18 @@ from src.utils.visualization import draw_frame_overlay, draw_info_overlay, expor
 from src.perception.pipeline import PerceptionPipeline
 from src.recognition.feature_extractor import FeatureExtractor
 
+# Live mode imports
+try:
+    from src.live.live_capture import LiveCapture, list_cameras
+    from src.live.frame_buffer import FrameBuffer
+    from src.ui.live_viewer import LiveViewer
+    from src.ui.hud_overlay import HUDOverlay
+    from src.ui.alert_renderer import CoachingAlert
+    LIVE_IMPORTS_OK = True
+except ImportError as e:
+    LIVE_IMPORTS_OK = False
+    LIVE_IMPORT_ERROR = str(e)
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
@@ -37,16 +60,34 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    parser.add_argument(
+    # Input source (mutually exclusive)
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
         "--video",
         type=str,
-        required=True,
         help="Path to input video file",
     )
+    input_group.add_argument(
+        "--live",
+        action="store_true",
+        help="Enable live streaming mode",
+    )
+    input_group.add_argument(
+        "--camera",
+        type=int,
+        const=0,
+        nargs="?",
+        help="Camera index for live mode (default: 0)",
+    )
+    input_group.add_argument(
+        "--url",
+        type=str,
+        help="Stream URL for live mode (RTSP/HTTP)",
+    )
+
     parser.add_argument(
         "--output",
         type=str,
-        required=True,
         help="Path to output file (without extension)",
     )
     parser.add_argument(
@@ -94,6 +135,25 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Path to calibration JSON file",
+    )
+
+    # Live mode specific options
+    parser.add_argument(
+        "--live-fps",
+        type=int,
+        default=30,
+        help="Target FPS for live capture",
+    )
+    parser.add_argument(
+        "--live-resolution",
+        type=str,
+        default="1920x1080",
+        help="Resolution for live capture (WxH)",
+    )
+    parser.add_argument(
+        "--light",
+        action="store_true",
+        help="Light mode: Use lightweight RTMPose + frame skipping for M1 Air",
     )
 
     return parser.parse_args()
@@ -375,6 +435,137 @@ def process_video(
     return feature_matrix
 
 
+def process_live(
+    camera_index: Optional[int] = None,
+    stream_url: Optional[str] = None,
+    frame_width: float = 1920.0,
+    confidence_threshold: float = 0.3,
+    device: str = "cpu",
+    target_fps: int = 30,
+    light_mode: bool = False,
+) -> None:
+    """
+    Process live video stream with real-time display.
+
+    Args:
+        camera_index: Camera index for live capture
+        stream_url: RTSP/HTTP stream URL
+        frame_width: Frame width for canonicalization
+        confidence_threshold: Minimum confidence for pose detection
+        device: Device for pose estimation (cpu/cuda/mps)
+        target_fps: Target FPS for capture
+        light_mode: Enable light mode for M1 Air (frame skipping)
+    """
+    if not LIVE_IMPORTS_OK:
+        logger.error("Live mode requires additional packages: pip install opencv-python")
+        logger.error(f"Import error: {LIVE_IMPORT_ERROR}")
+        raise ImportError("Live mode dependencies not installed")
+
+    # Parse resolution
+    width_str, height_str = str(frame_width).split("x") if "x" in str(frame_width) else ("1920", "1080")
+    capture_width = int(width_str) if width_str.isdigit() else 1920
+    capture_height = int(height_str) if height_str.isdigit() else 1080
+
+    # Frame skip interval for light mode
+    skip_interval = 2 if light_mode else 1
+
+    # Initialize pipelines
+    logger.info("Initializing live pipeline...")
+    perception_pipeline = PerceptionPipeline(
+        conf_threshold=confidence_threshold,
+    )
+
+    feature_extractor = FeatureExtractor(
+        velocity_alpha=0.7,
+        acceleration_alpha=0.7,
+    )
+
+    # Initialize live capture
+    if camera_index is not None:
+        capture = LiveCapture(
+            camera_index=camera_index,
+            width=capture_width,
+            height=capture_height,
+            fps=target_fps,
+        )
+    elif stream_url is not None:
+        capture = LiveCapture(
+            stream_url=stream_url,
+            width=capture_width,
+            height=capture_height,
+            fps=target_fps,
+        )
+    else:
+        raise ValueError("Must provide camera_index or stream_url")
+
+    # Initialize live viewer
+    viewer = LiveViewer()
+
+    # Frame buffer for smooth delivery
+    frame_buffer = FrameBuffer(max_size=30)
+
+    logger.info("Starting live processing...")
+    logger.info(f"Capture: {capture}")
+    logger.info(f"Light mode: {light_mode} (skip every {skip_interval} frames)")
+
+    frame_id = 0
+    processed_frames = 0
+
+    with capture:
+        while capture.is_opened and not viewer.is_closed():
+            ret, frame = capture.read()
+            if not ret:
+                break
+
+            # Frame skip for light mode
+            if frame_id % skip_interval != 0:
+                frame_id += 1
+                continue
+
+            timestamp = frame_id / target_fps if target_fps > 0 else 0.0
+
+            # Process frame through perception
+            frame_data = perception_pipeline.process_frame(
+                frame=frame,
+                timestamp=timestamp,
+                frame_id=frame_id,
+            )
+
+            # Extract features
+            features = feature_extractor.extract_frame_features(
+                frame=frame_data,
+                frame_width=float(capture.width),
+            )
+
+            # Add demo alerts (Phase 2 will add real coaching engine)
+            _add_demo_alerts(viewer, features, frame_data)
+
+            # Display frame
+            viewer.show(frame, poses=frame_data.poses, frame_data=frame_data)
+
+            processed_frames += 1
+            frame_id += 1
+
+            # Check FPS
+            if processed_frames % 30 == 0:
+                actual_fps = processed_frames / capture.elapsed_time
+                logger.info(f"Processed: {processed_frames} frames, FPS: {actual_fps:.1f}")
+
+    viewer.close()
+    logger.info(f"Live processing complete. Processed {processed_frames} frames.")
+
+
+def _add_demo_alerts(viewer: LiveViewer, features: np.ndarray, frame_data: FrameData) -> None:
+    """
+    Add demo coaching alerts based on features.
+    This is a placeholder - Phase 2 will implement real coaching engine.
+    """
+    # This is a simple demo - will be replaced with proper coaching engine
+    if len(frame_data.poses) >= 2:
+        # Check if both fencers detected
+        viewer.add_alert("Both fencers tracked", priority=5)
+
+
 def main() -> None:
     """Main entry point."""
     args = parse_args()
@@ -382,6 +573,40 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("FencerAI Feature Extraction Pipeline")
     logger.info("=" * 60)
+
+    # Handle live mode
+    if args.live or args.camera is not None or args.url is not None:
+        # Live mode
+        logger.info("Mode: LIVE STREAMING")
+        if args.camera is not None:
+            logger.info(f"Camera index: {args.camera}")
+            camera_idx = args.camera
+        else:
+            # Try to find available camera
+            cameras = list_cameras()
+            if cameras:
+                camera_idx = cameras[0]
+                logger.info(f"Using first available camera: {camera_idx}")
+            else:
+                camera_idx = None
+
+        try:
+            process_live(
+                camera_index=camera_idx,
+                stream_url=args.url,
+                frame_width=float(args.live_resolution.replace("x", ".")),
+                confidence_threshold=args.confidence_threshold,
+                device=args.device,
+                target_fps=args.live_fps,
+                light_mode=args.light,
+            )
+        except ImportError as e:
+            logger.error(f"Live mode failed: {e}")
+            raise
+        return
+
+    # File processing mode
+    logger.info("Mode: FILE PROCESSING")
     logger.info(f"Input video: {args.video}")
     logger.info(f"Output path: {args.output}")
     logger.info(f"Device: {args.device}")
