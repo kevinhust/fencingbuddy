@@ -39,6 +39,7 @@ from src.coaching.coaching_metrics import (
     DISTANCE_TOO_FAR,
     PREDICTABILITY_HIGH,
 )
+from src.recognition.action_classifier import ActionClassifier, ActionType, ActionResult
 from src.ui.alert_renderer import CoachingAlert
 
 
@@ -106,9 +107,11 @@ class CoachingEngine:
     def __init__(self):
         """Initialize coaching engine with alert rules."""
         self._metrics = CoachingMetrics(history_size=5)
+        self._action_classifier = ActionClassifier(history_size=10)
         self._last_alert_frames: Dict[str, int] = {}
         self._frame_count = 0
         self._cooldown_frames = 30  # Default cooldown
+        self._last_action_result: Optional[ActionResult] = None
 
         # Initialize alert rules
         self._rules = self._build_alert_rules()
@@ -117,6 +120,7 @@ class CoachingEngine:
         self,
         features: np.ndarray,
         min_priority: int = 1,
+        timestamp: float = 0.0,
     ) -> List[CoachingAlert]:
         """
         Evaluate current frame and return list of active alerts.
@@ -124,6 +128,7 @@ class CoachingEngine:
         Args:
             features: (2, 101) feature matrix for both fencers
             min_priority: Minimum priority level to include (1-5)
+            timestamp: Current timestamp for action classification
 
         Returns:
             List of CoachingAlert objects to display
@@ -133,6 +138,11 @@ class CoachingEngine:
 
         # Compute metrics for both fencers
         son_metrics, opp_metrics, relative = self._metrics.compute_both_fencers_metrics(features)
+
+        # Classify actions
+        self._last_action_result = self._action_classifier.classify(
+            features, son_metrics, opp_metrics, timestamp
+        )
 
         # Evaluate each rule
         for rule in self._rules:
@@ -165,6 +175,10 @@ class CoachingEngine:
 
         return alerts
 
+    def get_last_action(self) -> Optional[ActionResult]:
+        """Get the last action classification result."""
+        return self._last_action_result
+
     def _is_in_cooldown(self, rule_name: str) -> bool:
         """Check if a rule is in cooldown period."""
         if rule_name not in self._last_alert_frames:
@@ -175,6 +189,7 @@ class CoachingEngine:
     def reset(self) -> None:
         """Reset engine state for new session."""
         self._metrics.reset()
+        self._action_classifier.reset()
         self._last_alert_frames.clear()
         self._frame_count = 0
 
